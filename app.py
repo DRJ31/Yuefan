@@ -1,6 +1,8 @@
 from flask import Flask, request, url_for, redirect, Response
 from flask_sqlalchemy import SQLAlchemy
 import json
+import hashlib
+import base64
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yuefan.sqlite3'
@@ -8,6 +10,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yuefan.sqlite3'
 db = SQLAlchemy(app)
 
 
+# Models
 class Restaurants(db.Model):
     id = db.Column('id', db.Integer, primary_key=True)
     name = db.Column(db.String(10))
@@ -18,7 +21,18 @@ class Restaurants(db.Model):
         self.status = False
 
 
-@app.route('/')
+class User(db.Model):
+    id = db.Column('id', db.Integer, primary_key=True)
+    username = db.Column(db.String(20))
+    password = db.Column(db.String(32))
+
+    def __init__(self, username, password):
+        self.username = username
+        self.password = password
+
+
+# Router
+@app.route('/api')
 def root():
     rsp = {
         'name': 'ecwu',
@@ -27,6 +41,77 @@ def root():
     return Response(json.dumps(rsp), mimetype='application/json')
 
 
+@app.route('/api/add_restaurant', methods=['POST'])
+def add_restaurant():
+    restaurant = request.json.get('restaurant')
+    db.session.add(Restaurants(restaurant))
+    db.session.commit()
+    return Response(json.dumps({
+        'status': True,
+        'restaurant': restaurant
+    }), mimetype='application/json')
+
+
+@app.route('/api/get_restaurants')
+def get_restaurants():
+    restaurant_set = Restaurants.query.filter_by(status=True).all()
+    restaurants = []
+    for restaurant in restaurant_set:
+        restaurants.append(restaurant.name)
+    return Response(json.dumps({'restaurants': restaurants}), mimetype="application/json")
+
+
+@app.route('/api/delete_restaurants')
+def delete_restaurants():
+    pass
+
+
+@app.route('/api/add_user', methods=['POST'])
+def add_user():
+    username = request.json.get('username')
+    password = request.json.get('password')
+    password = str(base64.b64decode(password), 'utf-8')
+    people = User.query.filter_by(username=username).all()
+    if not people:
+        hl = hashlib.md5()
+        hl.update(password.encode(encoding='utf-8'))
+        db.session.add(User(username, hl.hexdigest()))
+        db.session.commit()
+        return Response(json.dumps({
+            'status': True,
+            'msg': 'Successfully registered!'
+        }))
+    return Response(json.dumps({
+        'status': False,
+        'msg': 'The username has registered'
+    }), mimetype='application/json')
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    username = request.json.get('username')
+    password = request.json.get('password')
+    password = str(base64.b64decode(password), 'utf-8')
+    people = User.query.filter_by(username=username).first()
+    if not people:
+        return Response(json.dumps({
+            'status': False,
+            'msg': 'User not exist'
+        }))
+    hl = hashlib.md5()
+    hl.update(password.encode(encoding='utf-8'))
+    if hl.hexdigest() != people.password:
+        return Response(json.dumps({
+            'status': False,
+            'msg': 'Password not match'
+        }))
+    return Response(json.dumps({
+        'status': True,
+        'msg': 'Login Success'
+    }))
+
+
+# Main Function
 if __name__ == '__main__':
     db.create_all()
     app.run(debug=True)
