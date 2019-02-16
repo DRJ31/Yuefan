@@ -1,5 +1,6 @@
 from flask import Flask, request, url_for, redirect, Response
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 import json
 import hashlib
 import base64
@@ -8,10 +9,16 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yuefan.sqlite3'
 
 db = SQLAlchemy(app)
-
+migrate = Migrate(app, db)
 
 # Models
-class Restaurants(db.Model):
+restaurant_restrict = db.Table('restaurant_restrict',
+                    db.Column('user_id', db.Integer, db.ForeignKey('user.id')),
+                    db.Column('restaurant_id', db.Integer, db.ForeignKey('restaurant.id'))
+)
+
+
+class Restaurant(db.Model):
     id = db.Column('id', db.Integer, primary_key=True)
     name = db.Column(db.String(10))
     status = db.Column(db.Boolean())
@@ -25,6 +32,9 @@ class User(db.Model):
     id = db.Column('id', db.Integer, primary_key=True)
     username = db.Column(db.String(20))
     password = db.Column(db.String(32))
+    restaurants = db.relationship('Restaurant',
+                                  secondary=restaurant_restrict,
+                                  backref=db.backref('user'))
 
     def __init__(self, username, password):
         self.username = username
@@ -32,19 +42,12 @@ class User(db.Model):
 
 
 # Router
-@app.route('/api')
-def root():
-    rsp = {
-        'name': 'ecwu',
-        'status': True
-    }
-    return Response(json.dumps(rsp), mimetype='application/json')
-
-
 @app.route('/api/add_restaurant', methods=['POST'])
 def add_restaurant():
     restaurant = request.json.get('restaurant')
-    db.session.add(Restaurants(restaurant))
+    username = request.json.get('username')
+    user = User.query.filter_by(username=username).first()
+    user.restaurants.append(Restaurant(restaurant))
     db.session.commit()
     return Response(json.dumps({
         'status': True,
@@ -52,18 +55,42 @@ def add_restaurant():
     }), mimetype='application/json')
 
 
-@app.route('/api/get_restaurants')
+@app.route('/api/get_restaurants', methods=['POST'])
 def get_restaurants():
-    restaurant_set = Restaurants.query.filter_by(status=True).all()
+    restaurant_set = Restaurant.query.filter_by(status=True).all()
     restaurants = []
+    user_restaurants = []
+    username = request.json.get('username')
+    user = User.query.filter_by(username=username).first()
     for restaurant in restaurant_set:
         restaurants.append(restaurant.name)
-    return Response(json.dumps({'restaurants': restaurants}), mimetype="application/json")
+    if username:
+        for restaurant in user.restaurants:
+            restaurants.append(restaurant.name)
+            user_restaurants.append(restaurant.name)
+            print(restaurant.name)
+    return Response(json.dumps({
+        'restaurants': restaurants,
+        'user_restaurants': user_restaurants
+    }), mimetype="application/json")
 
 
-@app.route('/api/delete_restaurants')
+@app.route('/api/delete_restaurants', methods=['POST'])
 def delete_restaurants():
-    pass
+    restaurants = request.json.get('restaurants')
+    username = request.json.get('username')
+    user = User.query.filter_by(username=username).first()
+    remain_restaurants = []
+    for restaurant in restaurants:
+        user.restaurants.remove(Restaurant.query.filter_by(name=restaurant['name']).first())
+    db.session.commit()
+    for restaurant in user.restaurants:
+        remain_restaurants.append({'name': restaurant.name})
+    return Response(json.dumps({
+        'status': True,
+        'msg': 'Deletion has done successfully!',
+        'restaurants': remain_restaurants
+    }))
 
 
 @app.route('/api/add_user', methods=['POST'])
