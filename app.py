@@ -89,7 +89,7 @@ def delete_restaurants():
         deleted_restaurant = Restaurant.query.filter_by(name=restaurant['name']).first()
         user.restaurants.remove(deleted_restaurant)
         exist_user = User.query.filter(User.restaurants.contains(deleted_restaurant))
-        if exist_user.count() == 0:
+        if exist_user.count() == 0 and not deleted_restaurant.status:
             db.session.delete(deleted_restaurant)
     db.session.commit()
     for restaurant in user.restaurants:
