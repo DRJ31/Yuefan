@@ -68,7 +68,6 @@ def get_restaurants():
         for restaurant in user.restaurants:
             restaurants.append(restaurant.name)
             user_restaurants.append(restaurant.name)
-            print(restaurant.name)
     return Response(json.dumps({
         'restaurants': restaurants,
         'user_restaurants': user_restaurants
