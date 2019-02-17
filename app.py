@@ -66,7 +66,8 @@ def get_restaurants():
         restaurants.append(restaurant.name)
     if username:
         for restaurant in user.restaurants:
-            restaurants.append(restaurant.name)
+            if restaurant not in restaurants:
+                restaurants.append(restaurant.name)
             user_restaurants.append(restaurant.name)
     return Response(json.dumps({
         'restaurants': restaurants,
