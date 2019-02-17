@@ -1,4 +1,4 @@
-from flask import Flask, request, url_for, redirect, Response
+from flask import Flask, request, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 import json
@@ -47,7 +47,11 @@ def add_restaurant():
     restaurant = request.json.get('restaurant')
     username = request.json.get('username')
     user = User.query.filter_by(username=username).first()
-    user.restaurants.append(Restaurant(restaurant))
+    exist_restaurant = Restaurant.query.filter_by(name=restaurant).first()
+    if exist_restaurant:
+        user.restaurants.append(exist_restaurant)
+    else:
+        user.restaurants.append(Restaurant(restaurant))
     db.session.commit()
     return Response(json.dumps({
         'status': True,
@@ -140,5 +144,4 @@ def login():
 
 # Main Function
 if __name__ == '__main__':
-    db.create_all()
-    app.run(debug=True)
+    app.run()
