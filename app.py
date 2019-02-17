@@ -48,10 +48,10 @@ def add_restaurant():
     username = request.json.get('username')
     user = User.query.filter_by(username=username).first()
     exist_restaurant = Restaurant.query.filter_by(name=restaurant).first()
+    add_restaurant = Restaurant(restaurant)
     if exist_restaurant:
-        user.restaurants.append(exist_restaurant)
-    else:
-        user.restaurants.append(Restaurant(restaurant))
+        add_restaurant = exist_restaurant
+    user.restaurants.append(add_restaurant)
     db.session.commit()
     return Response(json.dumps({
         'status': True,
@@ -86,7 +86,11 @@ def delete_restaurants():
     user = User.query.filter_by(username=username).first()
     remain_restaurants = []
     for restaurant in restaurants:
-        user.restaurants.remove(Restaurant.query.filter_by(name=restaurant['name']).first())
+        deleted_restaurant = Restaurant.query.filter_by(name=restaurant['name']).first()
+        user.restaurants.remove(deleted_restaurant)
+        exist_user = User.query.filter(User.restaurants.contains(deleted_restaurant))
+        if exist_user.count() < 2:
+            db.session.delete(deleted_restaurant)
     db.session.commit()
     for restaurant in user.restaurants:
         remain_restaurants.append({'name': restaurant.name})
