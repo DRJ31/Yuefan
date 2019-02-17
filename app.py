@@ -114,7 +114,7 @@ def add_user():
         db.session.commit()
         return Response(json.dumps({
             'status': True,
-            'msg': 'Successfully registered!'
+            'msg': 'Successfully registered! The page will redirect to login in 3s.'
         }))
     return Response(json.dumps({
         'status': False,
