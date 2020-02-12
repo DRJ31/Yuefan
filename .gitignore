@@ -1,0 +1,11 @@
+# Folder
+.idea/
+
+# Files
+encrypt.go
+
+# Database
+*.db
+
+# Bin
+yuefan
