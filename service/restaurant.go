@@ -1,38 +1,55 @@
 package service
 
 import (
-	"database/sql"
-	"fmt"
 	"github.com/DRJ31/yuefan/model"
-	"time"
+	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
-/*
-Insert information of restaurants
-@Param: db (*sql.DB)
-@Param: user (User)
-@Param: restaurant (Restaurant)
-@Return: (error)
-*/
-func InsertRestaurant(db *sql.DB, user model.User, restaurant model.Restaurant) error {
+func InsertRestaurant(ctx *gin.Context) {
+	var restaurantForm model.RestaurantForm
 	var check model.Restaurant
+
+	if err := ctx.ShouldBindJSON(&restaurantForm); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
+
+	restaurant := restaurantForm.Restaurant
+
+	// Initialize Redis
+	client, err := model.InitRedis()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Redis initialization failed"})
+		return
+	}
+
+	// Get current user information
+	user, err := getUser(client, restaurantForm.Token)
+	client.Close()
+	if err != nil {
+		ctx.JSON(http.StatusUnauthorized, gin.H{
+			"error": "User login is required",
+		})
+		return
+	}
 
 	// Validate information of restaurant
 	if len(restaurant.Name) == 0 {
-		fmt.Println(restaurant)
-		return &MyError{
-			When: time.Now(),
-			Err:  "Invalid Request",
-		}
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid restaurant name"})
+		return
 	}
 	restaurant.UserId = user.Id
+
+	db, err := model.InitDB()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Database initialization failed"})
+		return
+	}
 	row := db.QueryRow("SELECT ID from restaurant WHERE name=?", restaurant.Name)
-	err := row.Scan(&check.Id)
+	err = row.Scan(&check.Id)
 	if err == nil {
-		return &MyError{
-			When: time.Now(),
-			Err:  "Duplicated",
-		}
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "Duplicated name"})
+		return
 	}
 
 	// Insert restaurant information into database
@@ -43,70 +60,133 @@ func InsertRestaurant(db *sql.DB, user model.User, restaurant model.Restaurant) 
 		restaurant.Custom,
 	)
 	if err != nil {
-		return err
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
-	return nil
+	ctx.JSON(http.StatusOK, gin.H{"message": "Insert succeeded"})
 }
 
-/*
-Get information of all restaurants
-@Param: db (*sql.DB)
-@Return: restaurants ([]Restaurant)
-@Return: (error)
-*/
-func GetAllRestaurants(db *sql.DB) ([]model.Restaurant, error) {
+func GetAllRestaurants(ctx *gin.Context) {
 	restaurants := make([]model.Restaurant, 0)
-	rows, err := db.Query("SELECT  * from restaurant where custom=0")
+
+	// Initialize database
+	db, err := model.InitDB()
 	if err != nil {
-		return restaurants, err
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Database initialization failed"})
+		return
 	}
+
+	rows, err := db.Query("SELECT  * from restaurant where custom=0")
+	db.Close()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	for rows.Next() {
 		var restaurant model.Restaurant
 		if err = rows.Scan(&restaurant.Id, &restaurant.Name, &restaurant.UserId, &restaurant.Custom); err != nil {
-			return restaurants, err
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 		restaurants = append(restaurants, restaurant)
 	}
-	return restaurants, err
+	ctx.JSON(http.StatusOK, gin.H{"restaurants": restaurants})
 }
 
-/*
-Get information of all custom restaurants
-@Param: db (*sql.DB)
-@Param: user (User)
-@Return: restaurants ([]Restaurant)
-@Return: (error)
-*/
-func GetCustomRestaurants(db *sql.DB, user model.User) ([]model.Restaurant, error) {
+func GetCustomRestaurants(ctx *gin.Context) {
+	var token model.Token
+	if err := ctx.ShouldBindJSON(&token); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Initialize Redis
+	client, err := model.InitRedis()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Redis initialization failed"})
+		return
+	}
+
+	// Get current user information
+	user, err := getUser(client, token.Token)
+	client.Close()
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "User not exist"})
+		return
+	}
+
+	// Initialize database
+	db, err := model.InitDB()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Database initialization failed"})
+		return
+	}
+
 	restaurants := make([]model.Restaurant, 0)
 	rows, err := db.Query("SELECT  * from restaurant where custom=1 and user_id=?", user.Id)
 	if err != nil {
-		return restaurants, err
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 	for rows.Next() {
 		var restaurant model.Restaurant
 		if err = rows.Scan(&restaurant.Id, &restaurant.Name, &restaurant.UserId, &restaurant.Custom); err != nil {
-			return restaurants, err
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
 		}
 		restaurants = append(restaurants, restaurant)
 	}
-	return restaurants, err
+	ctx.JSON(http.StatusOK, gin.H{"restaurants": restaurants})
 }
 
-/*
-Delete a restaurant
-@Param: db (*sql.DB)
-@Param: user (User)
-@Param: restaurant (Restaurant)
-@Return: (error)
-*/
-func DeleteRestaurant(db *sql.DB, user model.User, restaurant model.Restaurant) error {
-	if user.Role != 0 && restaurant.Custom != 1 {
-		return &MyError{
-			When: time.Now(),
-			Err:  "You don't have permission to delete the restaurant.",
-		}
+func DeleteRestaurant(ctx *gin.Context) {
+	var restaurant model.Restaurant
+	token := ctx.Query("token")
+
+	// Initialize Redis
+	client, err := model.InitRedis()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Redis initialization failed"})
+		return
 	}
-	_, err := db.Exec("DELETE from restaurant where ID=?", restaurant.Id)
-	return err
+
+	// Check current user
+	user, err := getUser(client, token)
+	client.Close()
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "User not exist"})
+		return
+	}
+
+	id := ctx.Query("id")
+
+	// Initialize database
+	db, err := model.InitDB()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Database initialization failed"})
+		return
+	}
+
+	// Get restaurant from database
+	row := db.QueryRow("SELECT * FROM restaurant WHERE ID=?", id)
+	err = row.Scan(&restaurant.Id, &restaurant.Name, &restaurant.UserId, &restaurant.Custom)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "Restaurant does not exist"})
+		db.Close()
+		return
+	}
+
+	if user.Role != 1 && restaurant.Custom != 1 {
+		ctx.JSON(http.StatusForbidden, gin.H{"error": "You don't have permission to do that"})
+		db.Close()
+		return
+	}
+
+	_, err = db.Exec("DELETE from restaurant where ID=?", restaurant.Id)
+	db.Close()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "Successfully deleted"})
 }

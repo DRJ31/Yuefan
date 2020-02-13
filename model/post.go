@@ -1,28 +1,28 @@
 package model
 
 type UserRegister struct {
-	Username string
-	Password string
-	Code     string
-	Key      string
+	Username string `json:""`
+	Password string `json:""`
+	Code     string `json:""`
+	Key      string `json:""`
 }
 
 type UserLogin struct {
-	Username string
-	Password string
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type PasswordChange struct {
-	Token string
-	Old   string
-	New   string
+	Token string `json:"token"`
+	Old   string `json:"old"`
+	New   string `json:"new"`
 }
 
 type RestaurantForm struct {
-	Token      string
-	Restaurant Restaurant
+	Token      string     `json:"token"`
+	Restaurant Restaurant `json:"restaurant"`
 }
 
 type Token struct {
-	Token string
+	Token string `json:"token"`
 }

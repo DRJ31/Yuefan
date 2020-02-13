@@ -1,25 +1,14 @@
 package controller
 
 import (
-	"github.com/DRJ31/yuefan/model"
-	"github.com/kataras/iris"
+	"github.com/gin-gonic/gin"
 )
 
-func Router(app *iris.Application) {
-	// Initialize redis client
-	client, err := model.InitRedis()
-	if err != nil {
-		panic(err)
-	}
-	// Initialize database client
-	db, err := model.InitDB()
-	if err != nil {
-		panic(err)
-	}
+func Router(router *gin.Engine) {
 
 	// Router of user api
-	userRouter(db, client, app)
+	userRouter(router)
 
 	// Router of restaurant api
-	restaurantRouter(db, client, app)
+	restaurantRouter(router)
 }
